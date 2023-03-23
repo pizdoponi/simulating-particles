@@ -1,1 +1,7 @@
 .venv/
+
+
+# anything in tree folder
+tree/
+
+dataset/WaterDrop/
