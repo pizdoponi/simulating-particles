@@ -23,7 +23,6 @@
 """Utilities for reading open sourced Learning Complex Physics data."""
 
 import functools
-from re import A
 import numpy as np
 import torch
 import tensorflow.compat.v1 as tf
@@ -210,7 +209,7 @@ def prepare_data_from_tfds(data_path='data/train.tfrecord', is_rollout=False, ba
     return ds
 
 
-ds = prepare_data_from_tfds(data_path='dataset/WaterDrop/train.tfrecord', is_rollout=False, batch_size=2)
+ds = prepare_data_from_tfds(data_path='dataset/WaterDrop/train.tfrecord', is_rollout=False, batch_size=1)
 print(type(ds)) # <class 'tensorflow_datasets.core.dataset_utils._IterableDataset'>
 
 # # print the first batch
@@ -220,11 +219,15 @@ print(type(ds)) # <class 'tensorflow_datasets.core.dataset_utils._IterableDatase
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-positions = []
-n_particles_per_example = []
-particle_type = []
-labels_list = []
+# positions = torch.tensor([])
+# n_particles_per_example = torch.tensor([])
+# particle_type = torch.tensor([])
+# labels_list = torch.tensor([])
 i = 0
+
+# how to see the number of batches?
+# n_batches = ds.__len__()
+
 
 print('start loading data...')
 for features, labels in ds:
@@ -236,17 +239,59 @@ for features, labels in ds:
             # print('particle_type converted to torch tensor')
             labels = torch.tensor(labels).to(device)
             # print('labels converted to torch tensor')
+
+            print("features['position'].shape: ", features['position'].shape)
+            
+            # print(features['position'])
+            
+            # average the second dimension of the position tensor and flatten it
+            features['position'] = features['position'].mean(dim=1).view(features['position'].shape[0], -1)
+            # # flatten the second dimension of the position tensor
+            # features['position'] = features['position'].view(features['position'].shape[0], -1)
+            
+            try:
+              if i == 0:
+                positions = features['position']
+                n_particles_per_example = features['n_particles_per_example']
+                particle_type = features['particle_type']
+                labels_list = labels
+                
+              
+              elif i == 1:
+                
+                positions = torch.stack((positions, features['position']))
+                n_particles_per_example = torch.stack((n_particles_per_example, features['n_particles_per_example']))
+                particle_type = torch.stack((particle_type, features['particle_type']))
+                labels_list = torch.stack((labels_list, labels))
+              
+              else:
+                
+                positions = torch.cat((positions, features['position'].unsqueeze(0)), dim=0)
+                n_particles_per_example = torch.cat((n_particles_per_example, features['n_particles_per_example'].unsqueeze(0)), dim=0)
+                particle_type = torch.cat((particle_type, features['particle_type'].unsqueeze(0)), dim=0)
+                labels_list = torch.cat((labels_list, labels.unsqueeze(0)), dim=0)
+            
+            except RuntimeError:
+              print(f'------ ERROR: batch number {i} ------')
+            
+            print(features['position'].shape)
+            
+            # print(positions.shape)
+            # print(positions)
+            # exit(1)
+            
             print('batch', i, 'loaded')
             i += 1
             
-            positions.append(features['position'])
-            n_particles_per_example.append(features['n_particles_per_example'])
-            particle_type.append(features['particle_type'])
-            labels_list.append(labels)
+            # break after 1000 frames
+            if features['position'].shape[0] == 1000:
+              break
+            # if i == 1000:
+            #   break
             
-            # positions = features['position']
-            # n_particles_per_example = features['n_particles_per_example']
-            # particle_type = features['particle_type']
+
+print('all batches done')
+print('converting to tensors...')
 
 positions_tensor = torch.tensor(positions)
 n_particles_per_example_tensor = torch.tensor(n_particles_per_example)
@@ -265,10 +310,10 @@ torch.save(labels_tensor, 'data/labels.pt')
 
 
 
-dataset = torch.utils.data.TensorDataset(positions_tensor, n_particles_per_example_tensor, particle_type_tensor, labels_tensor)
+# dataset = torch.utils.data.TensorDataset(positions_tensor, n_particles_per_example_tensor, particle_type_tensor, labels_tensor)
 
 # save dataset to disk
-torch.save(dataset, 'data/dataset.pt')
+# torch.save(dataset, 'data/dataset.pt')
 
 
 # save pytorch tensors to disk
@@ -280,3 +325,8 @@ torch.save(dataset, 'data/dataset.pt')
 # torch.save(particle_type, 'data/particle_type.pt')
 # print('particle_type saved')
 # torch.save(labels, 'data/labels.pt')
+
+[1,2,3]
+[4,5,6]
+
+[1,2,3,4,5,6]
