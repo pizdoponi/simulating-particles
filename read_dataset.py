@@ -218,6 +218,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 i = 0
 
 number_of_trajectories = 0
+number_of_frames_in_trajectory = {}
 
 positions = {}
 # previous_positions = {}
@@ -234,7 +235,6 @@ for features, current_labels in ds:
             current_positions = torch.tensor(features['position']).to(device)
             current_labels = torch.tensor(current_labels).to(device)
             
-            # current_positions = current_positions_with_windows[:, -1, :]
             # _previous_positions = current_positions_with_windows[:, :-1, :]
             
             # average the second dimension of the position tensor and flatten it
@@ -242,6 +242,7 @@ for features, current_labels in ds:
             
             if number_of_particles not in positions.keys():
               number_of_trajectories += 1
+              number_of_frames_in_trajectory[number_of_particles] = 1
               
               positions[number_of_particles] = current_positions
             #   previous_positions[number_of_particles] = _previous_positions
@@ -249,14 +250,26 @@ for features, current_labels in ds:
               particle_type[number_of_particles] = torch.tensor(features['particle_type']).to(device)
             
             else:
-              positions[number_of_particles] = torch.cat((positions[number_of_particles], current_positions), dim=0)
+              if number_of_frames_in_trajectory[number_of_particles] == 1:
+                positions[number_of_particles] = torch.stack((positions[number_of_particles], current_positions), dim=0)
+                labels[number_of_particles] = torch.stack((labels[number_of_particles], current_labels), dim=0)
+                particle_type[number_of_particles] = torch.stack((particle_type[number_of_particles], torch.tensor(features['particle_type']).to(device)), dim=0)
+              
+              else:
+                positions[number_of_particles] = torch.cat((positions[number_of_particles], current_positions.unsqueeze(0)), dim=0)
+                labels[number_of_particles] = torch.cat((labels[number_of_particles], current_labels.unsqueeze(0)), dim=0)
+                particle_type[number_of_particles] = torch.cat((particle_type[number_of_particles], torch.tensor(features['particle_type']).to(device).unsqueeze(0)), dim=0)
             #   previous_positions[number_of_particles] = torch.cat((previous_positions[number_of_particles], _previous_positions), dim=0)
+              
+              number_of_frames_in_trajectory[number_of_particles] += 1
+
 
             
             print(f'batch {i} done; number of trajectories: {number_of_trajectories}')
             i += 1
+            
 
-            if number_of_trajectories == 21:
+            if number_of_trajectories == 22:
               break
             
 
