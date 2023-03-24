@@ -212,121 +212,98 @@ def prepare_data_from_tfds(data_path='data/train.tfrecord', is_rollout=False, ba
 ds = prepare_data_from_tfds(data_path='dataset/WaterDrop/train.tfrecord', is_rollout=False, batch_size=1)
 print(type(ds)) # <class 'tensorflow_datasets.core.dataset_utils._IterableDataset'>
 
-# # print the first batch
-# for i, batch in enumerate(ds):
-#     print(batch)
-#     break
-
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# positions = torch.tensor([])
-# n_particles_per_example = torch.tensor([])
-# particle_type = torch.tensor([])
-# labels_list = torch.tensor([])
+
 i = 0
 
-# how to see the number of batches?
-# n_batches = ds.__len__()
+number_of_trajectories = 0
+
+positions = {}
+# previous_positions = {}
+
+particle_type = {}
+labels = {}
 
 
 print('start loading data...')
-for features, labels in ds:
-            features['position'] = torch.tensor(features['position']).to(device)
-            # print('features converted to torch tensor')
-            features['n_particles_per_example'] = torch.tensor(features['n_particles_per_example']).to(device)
-            # print('n_particles_per_example converted to torch tensor')
-            features['particle_type'] = torch.tensor(features['particle_type']).to(device)
-            # print('particle_type converted to torch tensor')
-            labels = torch.tensor(labels).to(device)
-            # print('labels converted to torch tensor')
-
-            print("features['position'].shape: ", features['position'].shape)
+for features, current_labels in ds:
             
-            # print(features['position'])
+            number_of_particles = features['n_particles_per_example'][0]
+            
+            current_positions = torch.tensor(features['position']).to(device)
+            current_labels = torch.tensor(current_labels).to(device)
+            
+            # current_positions = current_positions_with_windows[:, -1, :]
+            # _previous_positions = current_positions_with_windows[:, :-1, :]
             
             # average the second dimension of the position tensor and flatten it
-            features['position'] = features['position'].mean(dim=1).view(features['position'].shape[0], -1)
-            # # flatten the second dimension of the position tensor
-            # features['position'] = features['position'].view(features['position'].shape[0], -1)
+            # features['position'] = features['position'].mean(dim=1).view(features['position'].shape[0], -1)
             
-            try:
-              if i == 0:
-                positions = features['position']
-                n_particles_per_example = features['n_particles_per_example']
-                particle_type = features['particle_type']
-                labels_list = labels
-                
+            if number_of_particles not in positions.keys():
+              number_of_trajectories += 1
               
-              elif i == 1:
-                
-                positions = torch.stack((positions, features['position']))
-                n_particles_per_example = torch.stack((n_particles_per_example, features['n_particles_per_example']))
-                particle_type = torch.stack((particle_type, features['particle_type']))
-                labels_list = torch.stack((labels_list, labels))
-              
-              else:
-                
-                positions = torch.cat((positions, features['position'].unsqueeze(0)), dim=0)
-                n_particles_per_example = torch.cat((n_particles_per_example, features['n_particles_per_example'].unsqueeze(0)), dim=0)
-                particle_type = torch.cat((particle_type, features['particle_type'].unsqueeze(0)), dim=0)
-                labels_list = torch.cat((labels_list, labels.unsqueeze(0)), dim=0)
+              positions[number_of_particles] = current_positions
+            #   previous_positions[number_of_particles] = _previous_positions
+              labels[number_of_particles] = current_labels
+              particle_type[number_of_particles] = torch.tensor(features['particle_type']).to(device)
             
-            except RuntimeError:
-              print(f'------ ERROR: batch number {i} ------')
+            else:
+              positions[number_of_particles] = torch.cat((positions[number_of_particles], current_positions), dim=0)
+            #   previous_positions[number_of_particles] = torch.cat((previous_positions[number_of_particles], _previous_positions), dim=0)
+
             
-            print(features['position'].shape)
-            
-            # print(positions.shape)
-            # print(positions)
-            # exit(1)
-            
-            print('batch', i, 'loaded')
+            print(f'batch {i} done; number of trajectories: {number_of_trajectories}')
             i += 1
-            
-            # break after 1000 frames
-            if features['position'].shape[0] == 1000:
+
+            if number_of_trajectories == 21:
               break
-            # if i == 1000:
-            #   break
             
 
 print('all batches done')
 print('converting to tensors...')
 
-positions_tensor = torch.tensor(positions)
-n_particles_per_example_tensor = torch.tensor(n_particles_per_example)
-particle_type_tensor = torch.tensor(particle_type)
-labels_tensor = torch.tensor(labels_list)
+import shutil
 
-# save pytorch tensors to disk
-print('saving data to disk...')
-torch.save(positions_tensor, 'data/positions.pt')
-print('positions saved')
-torch.save(n_particles_per_example_tensor, 'data/n_particles_per_example.pt')
-print('n_particles_per_example saved')
-torch.save(particle_type_tensor, 'data/particle_type.pt')
-print('particle_type saved')
-torch.save(labels_tensor, 'data/labels.pt')
+trajectory_dir_count = 0
+for trajectory_dir_count, n_particles in enumerate(positions.keys()):
+  
+  if os.path.exists(f'data/trajectories/{trajectory_dir_count}'):
+    shutil.rmtree(f'data/trajectories/{trajectory_dir_count}')
+    print(f'data/trajectories/{trajectory_dir_count} deleted')
+    
+  os.makedirs(f'data/trajectories/{trajectory_dir_count}')
+  print(f'data/trajectories/{trajectory_dir_count} created')
+  
+  with open(f'data/trajectories/{trajectory_dir_count}/positions.pt', 'wb') as f:
+    torch.save(positions[n_particles], f)
+    print(f'data/trajectories/{trajectory_dir_count}/positions.pt saved')
+    
+#   with open(f'data/trajectories/{trajectory_dir_count}/previous_positions.pt', 'wb') as f:
+#     torch.save(previous_positions[n_particles], f)
+#     print(f'data/trajectories/{trajectory_dir_count}/previous_positions.pt saved')
+    
+  with open(f'data/trajectories/{trajectory_dir_count}/labels.pt', 'wb') as f:
+    torch.save(labels[n_particles], f)
+    print(f'data/trajectories/{trajectory_dir_count}/labels.pt saved')
+    
+  with open(f'data/trajectories/{trajectory_dir_count}/particle_type.pt', 'wb') as f:
+    torch.save(particle_type[n_particles], f)
+    print(f'data/trajectories/{trajectory_dir_count}/particle_type.pt saved')
 
+# positions_tensor = torch.tensor(positions)
+# n_particles_per_example_tensor = torch.tensor(n_particles_per_example)
+# particle_type_tensor = torch.tensor(particle_type)
+# labels_tensor = torch.tensor(labels_list)
 
-
-# dataset = torch.utils.data.TensorDataset(positions_tensor, n_particles_per_example_tensor, particle_type_tensor, labels_tensor)
-
-# save dataset to disk
-# torch.save(dataset, 'data/dataset.pt')
-
-
-# save pytorch tensors to disk
+# # save pytorch tensors to disk
 # print('saving data to disk...')
-# torch.save(positions, 'data/positions.pt')
+# torch.save(positions_tensor, 'data/positions.pt')
 # print('positions saved')
-# torch.save(n_particles_per_example, 'data/n_particles_per_example.pt')
+# torch.save(n_particles_per_example_tensor, 'data/n_particles_per_example.pt')
 # print('n_particles_per_example saved')
-# torch.save(particle_type, 'data/particle_type.pt')
+# torch.save(particle_type_tensor, 'data/particle_type.pt')
 # print('particle_type saved')
-# torch.save(labels, 'data/labels.pt')
+# torch.save(labels_tensor, 'data/labels.pt')
 
-[1,2,3]
-[4,5,6]
 
-[1,2,3,4,5,6]
